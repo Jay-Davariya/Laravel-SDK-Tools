@@ -753,8 +753,20 @@
                             </div>
 
                             <form id="upload-form" class="space-y-6">
-
-
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div class="space-y-2">
+                                        <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Blog Title</label>
+                                        <input type="text" id="upload-title" required
+                                            class="w-full bg-white border border-gray-200 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm"
+                                            placeholder="Enter blog title">
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Category</label>
+                                        <input type="text" id="upload-category" required
+                                            class="w-full bg-white border border-gray-200 rounded-2xl py-3 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm"
+                                            placeholder="Enter category (e.g., Odoo, ERP)">
+                                    </div>
+                                </div>
                                 <div class="space-y-2">
                                     <div class="flex items-center justify-between mb-1">
                                         <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Raw
