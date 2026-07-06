@@ -7,7 +7,6 @@ use OpenAI\Laravel\Facades\OpenAI;
 use Gemini\Laravel\Facades\Gemini;
 use Gemini\Enums\ModelType;
 use Illuminate\Support\Facades\Http;
-use Gemini;
 
 class AIController extends Controller
 {
