@@ -7,6 +7,7 @@ use OpenAI\Laravel\Facades\OpenAI;
 use Gemini\Laravel\Facades\Gemini;
 use Gemini\Enums\ModelType;
 use Illuminate\Support\Facades\Http;
+use Gemini;
 
 class AIController extends Controller
 {
@@ -284,13 +285,38 @@ class AIController extends Controller
         $systemPrompt = match ($request->mode) {
             'writer' => 'You are a professional blog writer for techvoot.com. Create high-quality, SEO-optimized articles. IMPORTANT: Use the following HTML structure:
                 1. Wrap major sections in <div id="slug" class="page-section"> with an <h2> header.
-                2. Use <p> tags for content. You may use <span style="font-weight: 400;"> inside <p> and <li> tags for consistent styling.
+                2. Use <p> tags for content.
                 3. Use <h3> for sub-sections.
                 4. Include internal links to relevant techvoot.com services (e.g., /odoo, /healthcare-software-development, /services/ai-services-solutions) using <a href="...">...</a>.
                 5. Use <ul> and <ol> for lists.
                 6. For Call-to-Actions, use: <div class="cta-card-box"><h3 class="h5">Ready to scale?</h3><p>Connect with our expert team today.</p><div><a class="cta-card-btn" href="https://www.techvoot.com/contact-us">Contact Us</a></div></div>.
                 7. If including tables, always wrap them in <div class="table-responsive">. The table element itself must be <table class="table table-bordered" style="width: 100%;">. Table headers must be inside <thead> with <th> tags (optionally containing <strong> for bold headings), and the table body must be inside <tbody> with <td> tags. Keep table cells clean without nesting <p> elements inside <td> or <th> tags.
-                8. ALWAYS append a timeline index at the end: <ul class="sidebar-blog-timeline"><li class="blog-timeline-link"><a href="#slug">Section Title</a></li></ul>.
+                8. Apply Blog Highlights rules dynamically by detecting patterns in the content:
+                   - Highlight Box (List Sections): If the content contains a heading followed by a numbered or bulleted list (such as "What This Guide Covers", "Key Takeaways", "Checklist", etc.), wrap the heading and the list in:
+                     <div class="blog-highlight-bg-box">
+                       <h3>Heading</h3>
+                       <ol/ul>
+                         <li>Item content</li>
+                       </ol/ul>
+                     </div>
+                     (Use <h3> for the heading, convert numbered lists to <ol>, and bulleted lists to <ul>).
+                   - Highlight Paragraph: If a standalone paragraph should be highlighted, wrap it in:
+                     <div class="blog-highlight-p">
+                       <h3>Optional Heading</h3>
+                       <p>Highlighted paragraph...</p>
+                     </div>
+                     (If there is no heading, omit the <h3>).
+                   - Left Border Highlight: If a paragraph starts with labels such as "Best:", "Best For:", "Tip:", "Important:", "Warning:", "Recommendation:", or "Pro Tip:" (including variations ending with " :-" or ":-"), wrap it in:
+                     <div class="blog-highlight-with-left-border">
+                       <p><strong>Normalized Label:</strong> Rest of content.</p>
+                     </div>
+                     (Normalize the label to its standard title-cased form followed by a colon, e.g., <strong>Best For:</strong>, <strong>Pro Tip:</strong>, <strong>Tip:</strong>, <strong>Important:</strong>, <strong>Warning:</strong>).
+                   - Note Handling: If a paragraph starts with "Note:", "Note :-", "Note:-", or "Note :- ", remove the "Note" label entirely (including any colon, hyphen, or trailing space) and wrap the remaining content in:
+                     <div class="blog-highlight-with-left-border">
+                       <p>Content...</p>
+                     </div>
+                   - Note: Use ONLY these class names for highlight features: blog-highlight-bg-box, blog-highlight-p, blog-highlight-with-left-border. No inline styles are allowed.
+                9. ALWAYS append a timeline index at the end: <ul class="sidebar-blog-timeline"><li class="blog-timeline-link"><a href="#slug">Section Title</a></li></ul>.
                 Output ONLY clean HTML.',
             'coder' => 'You are an expert software developer. Provide clean, efficient code snippets and clear explanations.',
             'vision' => 'You are an image analysis expert. Describe images or provide creative vision insights.',
@@ -416,23 +442,48 @@ class AIController extends Controller
 
         $systemPrompt = "You are a Senior Technical Content Architect. Rewrite the provided HTML into a CLEAN and STRUCTURED format:
         1. Wrap each logical section in <div id=\"...\" class=\"page-section\">. The ID must be a short, clean, slugified version of the section's <h2> title (e.g., if the title is 'Introduction', the id must be 'introduction'; if the title is 'Remote Development Team Cost & Timeline Comparison', the id must be 'cost-timeline-comparison').
-        2. Use <h2> for section titles and <h3> for sub-points.
-        3. REMOVE ALL inline styles, <span> tags, and font-weight attributes, except within tables where specified below.
-        4. Use only semantic tags: <p>, <ul>, <li>, <a>, <strong>, and standard table tags (table, thead, tbody, tr, th, td).
+        2. Use <h2> for section titles and <h3> for sub-points (unless styled inside highlight boxes).
+        3. REMOVE ALL inline styles (except style=\"width: 100%;\" on table as specified below), <span> tags, and font-weight attributes.
+        4. Use only semantic tags: <p>, <ul>, <li>, <a>, <strong>, and standard table/heading/list tags.
            - CRITICAL: Absolutely DO NOT remove or strip any anchor links (<a> tags) present in the source HTML. Keep them exactly in their original positions with their href attributes preserved.
            - Manage the target attribute: For external links (URLs starting with http:// or https:// that do not point to techvoot.com), ensure they have target=\"_blank\" and rel=\"noopener noreferrer\". For internal links (or any anchor links that originally had target=\"_blank\"), preserve target=\"_blank\" and do not remove it.
         5. If the input contains a table, ensure the table is wrapped in a `<div class=\"table-responsive\">` container.
         6. The `<table>` element itself must have the classes `table table-bordered` and the inline style `style=\"width: 100%;\"` (i.e., <table class=\"table table-bordered\" style=\"width: 100%;\">).
         7. Table header rows must be placed inside `<thead>` with header cells using `<th>` tags (optionally containing `<strong>` for bold headings). All data rows must be placed inside `<tbody>` with data cells using `<td>` tags.
         8. Clean up all inner paragraphs and styling inside table cells (<td>/<th>) to keep them clean. E.g., instead of <td><p><strong>Content</strong></p></td>, simplify to <td>Content</td> (or <th><strong>Content</strong></th>).
-        9. Always append a timeline index at the end of the content using this custom structure:
+        9. Apply Blog Highlights rules dynamically by detecting patterns in the content:
+           - Highlight Box (List Sections): If the content contains a heading followed by a numbered or bulleted list (such as 'What This Guide Covers', 'Key Takeaways', 'Checklist', etc.), wrap the heading and the list in:
+             <div class=\"blog-highlight-bg-box\">
+               <h3>Heading</h3>
+               <ol/ul>
+                 <li>Item content</li>
+               </ol/ul>
+             </div>
+             (Use <h3> for the heading, convert numbered lists to <ol>, and bulleted lists to <ul>).
+           - Highlight Paragraph: If a standalone paragraph should be highlighted, wrap it in:
+             <div class=\"blog-highlight-p\">
+               <h3>Optional Heading</h3>
+               <p>Highlighted paragraph...</p>
+             </div>
+             (If there is no heading, omit the <h3>).
+           - Left Border Highlight: If a paragraph starts with labels such as 'Best:', 'Best For:', 'Tip:', 'Important:', 'Warning:', 'Recommendation:', or 'Pro Tip:' (including variations ending with ' :-' or ':-'), wrap it in:
+             <div class=\"blog-highlight-with-left-border\">
+               <p><strong>Normalized Label:</strong> Rest of content.</p>
+             </div>
+             (Normalize the label to its standard title-cased form followed by a colon, e.g., <strong>Best For:</strong>, <strong>Pro Tip:</strong>, <strong>Tip:</strong>, <strong>Important:</strong>, <strong>Warning:</strong>).
+           - Note Handling: If a paragraph starts with 'Note:', 'Note :-', 'Note:-', or 'Note :- ', remove the 'Note' label entirely (including any colon, hyphen, or trailing space) and wrap the remaining content in:
+             <div class=\"blog-highlight-with-left-border\">
+               <p>Content...</p>
+             </div>
+           - Note: Use ONLY these class names for highlight features: blog-highlight-bg-box, blog-highlight-p, blog-highlight-with-left-border. No inline styles are allowed.
+        10. Always append a timeline index at the end of the content using this custom structure:
            <ul class=\"sidebar-blog-timeline\">
              <li class=\"blog-timeline-link\"><a href=\"#section-id\">Section Title</a></li>
              ...
            </ul>
            Create one <li> entry for each <h2> section title in the document, matching the generated ID and title text exactly.
-        10. CRITICAL: Do not summarize, shorten, or omit any section of the input HTML. Every paragraph, list item, table row, and section (such as FAQs) from the original content must be fully preserved and included in the output. Truncation or laziness is strictly forbidden.
-        11. Return ONLY the final HTML body content without any markdown backticks.";
+        11. CRITICAL: Do not summarize, shorten, or omit any section of the input HTML. Every paragraph, list item, table row, and section (such as FAQs) from the original content must be fully preserved and included in the output. Truncation or laziness is strictly forbidden.
+        12. Return ONLY the final HTML body content without any markdown backticks.";
 
         try {
             // Use Groq (Llama 3.3) - Much faster and reliable for HTML formatting

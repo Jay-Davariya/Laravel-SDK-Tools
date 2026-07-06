@@ -299,6 +299,81 @@
             transform: translateY(-2px);
         }
 
+        /* Blog Highlighting Styles */
+        .blog-highlight-bg-box {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 24px;
+            margin: 24px 0;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+
+        .blog-highlight-bg-box h3 {
+            color: #1e293b;
+            margin-top: 0 !important;
+            margin-bottom: 16px;
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .blog-highlight-bg-box ul, 
+        .blog-highlight-bg-box ol {
+            margin-bottom: 0;
+            padding-left: 20px;
+        }
+
+        .blog-highlight-bg-box li {
+            margin-bottom: 8px;
+            color: #334155;
+        }
+
+        .blog-highlight-bg-box li:last-child {
+            margin-bottom: 0;
+        }
+
+        .blog-highlight-p {
+            background: #f8fafc;
+            border-left: 4px solid #3b82f6;
+            padding: 18px 24px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .blog-highlight-p h3 {
+            color: #1e293b;
+            margin-top: 0 !important;
+            margin-bottom: 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .blog-highlight-p p {
+            margin-bottom: 0 !important;
+            padding: 0 !important;
+            color: #475569;
+        }
+
+        .blog-highlight-with-left-border {
+            border-left: 4px solid #4f46e5;
+            padding: 16px 20px;
+            margin: 20px 0;
+            background-color: #f8fafc;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .blog-highlight-with-left-border p {
+            margin-bottom: 0 !important;
+            padding: 0 !important;
+            color: #334155;
+            line-height: 1.6;
+        }
+
+        .blog-highlight-with-left-border strong {
+            color: #1e293b;
+            font-weight: 700;
+        }
+
         /* Standardized Table Styling */
         .table-responsive {
             overflow-x: auto;
