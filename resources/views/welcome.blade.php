@@ -1095,7 +1095,7 @@
                                             <button onclick="sendToUpload()"
                                                 class="px-4 py-2 rounded-lg bg-green-500/10 hover:bg-green-500/20 text-[10px] text-green-400 font-black transition-all border border-green-500/10 uppercase tracking-widest">Send
                                                 to Upload</button>
-                                            <button onclick="copyContent('writer-result')"
+                                            <button onclick="copyContent('writer-result', this)"
                                                 class="px-4 py-2 rounded-lg bg-white hover:bg-gray-100 text-[10px] text-blue-400 font-black transition-all border border-gray-200 uppercase tracking-widest">Copy
                                                 Content</button>
                                         </div>
@@ -1447,14 +1447,16 @@
                 }
             }
 
-            function copyContent(id) {
+            function copyContent(id, btn) {
                 const targetId = (id === 'writer-result') ? 'writer-result-code' : id;
                 const text = document.getElementById(targetId).innerText;
                 navigator.clipboard.writeText(text).then(() => {
-                    const btn = event.target;
-                    const original = btn.innerText;
-                    btn.innerText = 'COPIED!';
-                    setTimeout(() => btn.innerText = original, 2000);
+                    const targetBtn = btn || (typeof event !== 'undefined' ? event.target : null);
+                    if (targetBtn) {
+                        const original = targetBtn.innerText;
+                        targetBtn.innerText = 'COPIED!';
+                        setTimeout(() => targetBtn.innerText = original, 2000);
+                    }
                 });
             }
 
