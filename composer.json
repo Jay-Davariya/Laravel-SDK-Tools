@@ -7,11 +7,11 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "google-gemini-php/client": "^2.7",
         "google-gemini-php/laravel": "^2.0",
         "laravel/framework": "^13.7",
         "laravel/tinker": "^3.0",
-        "openai-php/laravel": "^0.19.1",
-        "techvoot/engineering-intelligence-package": "^1.0"
+        "openai-php/laravel": "^0.19.1"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

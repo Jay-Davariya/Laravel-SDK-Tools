@@ -24,7 +24,9 @@ class AIController extends Controller
         $messages = [];
         if ($request->history) {
             foreach ($request->history as $msg) {
-                $messages[] = ['role' => $msg['role'], 'content' => $msg['content']];
+                if (isset($msg['role'], $msg['content'])) {
+                    $messages[] = ['role' => $msg['role'], 'content' => $msg['content']];
+                }
             }
         }
         $messages[] = ['role' => 'user', 'content' => $request->prompt];
@@ -89,7 +91,7 @@ class AIController extends Controller
                     $geminiHistory = [];
                     if (!empty($request->history)) {
                         foreach ($request->history as $msg) {
-                            if (!empty($msg['content'])) {
+                            if (isset($msg['role'], $msg['content'])) {
                                 $geminiHistory[] = \Gemini\Data\Content::parse(
                                     $msg['content'],
                                     $msg['role'] === 'assistant' ? \Gemini\Enums\Role::MODEL : \Gemini\Enums\Role::USER
@@ -360,7 +362,7 @@ class AIController extends Controller
                 }
             } elseif (config('gemini.api_key') && config('gemini.api_key') !== 'your_google_studio_key_here') {
                 try {
-                    $stream = Gemini::generativeModel(ModelType::GEMINI_FLASH)->streamGenerateContent($systemPrompt . "\n\nUser request: " . $request->prompt);
+                    $stream = Gemini::generativeModel(config('services.gemini.model', 'gemini-2.5-flash'))->streamGenerateContent($systemPrompt . "\n\nUser request: " . $request->prompt);
                     foreach ($stream as $response) {
                         $text = $response->text();
                         if ($text) {
@@ -484,31 +486,109 @@ class AIController extends Controller
         11. CRITICAL: Do not summarize, shorten, or omit any section of the input HTML. Every paragraph, list item, table row, and section (such as FAQs) from the original content must be fully preserved and included in the output. Truncation or laziness is strictly forbidden.
         12. Return ONLY the final HTML body content without any markdown backticks.";
 
-        try {
-            // Use Groq (Llama 3.3) - Much faster and reliable for HTML formatting
-            $response = Http::withToken(config('groq.api_key'))
-                ->post(config('groq.base_url') . '/chat/completions', [
-                    'model' => config('groq.default_model', 'llama-3.3-70b-versatile'),
-                    'messages' => [
-                        ['role' => 'system', 'content' => $systemPrompt],
-                        ['role' => 'user', 'content' => $request->html]
-                    ],
-                    'temperature' => 0.2,
-                ]);
+        $htmlContent = $request->html;
+        
+        // Chunk HTML to avoid max output token limits in large documents
+        $chunks = $this->chunkHtml($htmlContent, 15000);
+        $standardizedChunks = [];
+        $errors = [];
 
-            if ($response->failed()) {
-                throw new \Exception("Groq API Error: " . $response->body());
+        foreach ($chunks as $index => $chunk) {
+            $chunkHtml = null;
+            $chunkErrors = [];
+
+            // 1. Try Gemini
+            if (config('gemini.api_key') && config('gemini.api_key') !== 'your_google_studio_key_here') {
+                try {
+                    $response = Gemini::generativeModel(config('services.gemini.model', 'gemini-2.5-flash'))
+                        ->generateContent($systemPrompt . "\n\nUser request: " . $chunk);
+                    $chunkHtml = $response->text();
+                    \Illuminate\Support\Facades\Log::info("Standardize chunk " . ($index + 1) . ": Gemini provider succeeded.");
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::error("Standardize chunk " . ($index + 1) . ": Gemini provider failed. Error: " . $e->getMessage());
+                    $chunkErrors[] = "Gemini Error: " . $e->getMessage();
+                }
             }
 
-            $data = $response->json();
-            $cleanHtml = $data['choices'][0]['message']['content'] ?? '';
+            // 2. Try OpenAI if Gemini failed or skipped
+            if (empty($chunkHtml) && config('openai.api_key')) {
+                try {
+                    $response = OpenAI::chat()->create([
+                        'model' => 'gpt-4o-mini',
+                        'messages' => [
+                            ['role' => 'system', 'content' => $systemPrompt],
+                            ['role' => 'user', 'content' => $chunk],
+                        ],
+                        'temperature' => 0.2,
+                    ]);
+                    $chunkHtml = $response->choices[0]->message->content;
+                    \Illuminate\Support\Facades\Log::info("Standardize chunk " . ($index + 1) . ": OpenAI provider succeeded.");
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::error("Standardize chunk " . ($index + 1) . ": OpenAI provider failed. Error: " . $e->getMessage());
+                    $chunkErrors[] = "OpenAI Error: " . $e->getMessage();
+                }
+            }
+
+            // 3. Try Groq if others failed or skipped
+            if (empty($chunkHtml) && config('groq.api_key')) {
+                try {
+                    $response = Http::withToken(config('groq.api_key'))
+                        ->post(config('groq.base_url') . '/chat/completions', [
+                            'model' => config('groq.default_model', 'llama-3.3-70b-versatile'),
+                            'messages' => [
+                                ['role' => 'system', 'content' => $systemPrompt],
+                                ['role' => 'user', 'content' => $chunk]
+                            ],
+                            'temperature' => 0.2,
+                        ]);
+
+                    if ($response->failed()) {
+                        throw new \Exception("Groq API Error: " . $response->body());
+                    }
+
+                    $data = $response->json();
+                    $chunkHtml = $data['choices'][0]['message']['content'] ?? '';
+                    \Illuminate\Support\Facades\Log::info("Standardize chunk " . ($index + 1) . ": Groq provider succeeded.");
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::error("Standardize chunk " . ($index + 1) . ": Groq provider failed. Error: " . $e->getMessage());
+                    $chunkErrors[] = "Groq Error: " . $e->getMessage();
+                }
+            }
+
+            if (empty($chunkHtml)) {
+                $errors[] = "Chunk " . ($index + 1) . " failed: " . implode(" | ", $chunkErrors);
+                break;
+            }
 
             // Strip potential markdown backticks if AI included them
-            $cleanHtml = preg_replace('/^```html\n|```$/', '', trim($cleanHtml));
+            $chunkHtml = preg_replace('/^```html\n|```$/', '', trim($chunkHtml));
+            
+            // Strip any timeline index from intermediate chunk results
+            $chunkHtml = preg_replace('/<ul class="sidebar-blog-timeline">.*?<\/ul>/is', '', $chunkHtml);
+
+            $standardizedChunks[] = $chunkHtml;
+        }
+
+        try {
+            if (count($standardizedChunks) < count($chunks)) {
+                throw new \Exception("Failed to process all document chunks. Errors: " . implode(" | ", $errors));
+            }
+
+            // Combine all chunks
+            $combinedHtml = implode("\n", $standardizedChunks);
+
+            // Strip any leftover/duplicate timeline indexes
+            $combinedHtml = preg_replace('/<ul class="sidebar-blog-timeline">.*?<\/ul>/is', '', $combinedHtml);
+
+            // Re-generate the single final timeline index from all h2 headings in the combined HTML
+            $timeline = $this->generateTimeline($combinedHtml);
+            if (!empty($timeline)) {
+                $combinedHtml = rtrim($combinedHtml) . "\n\n" . $timeline;
+            }
 
             return response()->json([
                 'success' => true,
-                'standardized' => $cleanHtml
+                'standardized' => $combinedHtml
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -516,5 +596,83 @@ class AIController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Chunk HTML content into smaller blocks.
+     */
+    private function chunkHtml(string $html, int $maxLength = 15000): array
+    {
+        if (strlen($html) <= $maxLength) {
+            return [$html];
+        }
+
+        // Try to split by <h2> tags first (main sections)
+        $parts = preg_split('/(<h2[^>]*>)/i', $html, -1, PREG_SPLIT_DELIM_CAPTURE);
+        
+        if (count($parts) > 1) {
+            $chunks = [];
+            $currentChunk = $parts[0];
+            
+            for ($i = 1; $i < count($parts); $i += 2) {
+                $h2Tag = $parts[$i];
+                $sectionContent = $parts[$i + 1] ?? '';
+                $sectionHtml = $h2Tag . $sectionContent;
+                
+                if (strlen($currentChunk) + strlen($sectionHtml) > $maxLength && strlen($currentChunk) > 0) {
+                    $chunks[] = $currentChunk;
+                    $currentChunk = $sectionHtml;
+                } else {
+                    $currentChunk .= $sectionHtml;
+                }
+            }
+            if (strlen($currentChunk) > 0) {
+                $chunks[] = $currentChunk;
+            }
+            return $chunks;
+        }
+
+        // Fallback: split by paragraph/div closures if no h2 tags exist
+        $parts = preg_split('/(<\/p>|<\/div>)/i', $html, -1, PREG_SPLIT_DELIM_CAPTURE);
+        $chunks = [];
+        $currentChunk = '';
+        for ($i = 0; $i < count($parts); $i += 2) {
+            $content = $parts[$i];
+            $tag = $parts[$i + 1] ?? '';
+            $segment = $content . $tag;
+            
+            if (strlen($currentChunk) + strlen($segment) > $maxLength && strlen($currentChunk) > 0) {
+                $chunks[] = $currentChunk;
+                $currentChunk = $segment;
+            } else {
+                $currentChunk .= $segment;
+            }
+        }
+        if (strlen($currentChunk) > 0) {
+            $chunks[] = $currentChunk;
+        }
+        return $chunks;
+    }
+
+    /**
+     * Generate the sidebar blog timeline index programmatically from the HTML.
+     */
+    private function generateTimeline(string $html): string
+    {
+        preg_match_all('/<div[^>]*id="([^"]+)"[^>]*>\s*<h2[^>]*>(.*?)<\/h2>/is', $html, $matches, PREG_SET_ORDER);
+        
+        if (empty($matches)) {
+            return '';
+        }
+        
+        $timeline = '<ul class="sidebar-blog-timeline">' . "\n";
+        foreach ($matches as $match) {
+            $id = $match[1];
+            $title = strip_tags($match[2]);
+            $timeline .= '  <li class="blog-timeline-link"><a href="#' . $id . '">' . $title . '</a></li>' . "\n";
+        }
+        $timeline .= '</ul>';
+        
+        return $timeline;
     }
 }
